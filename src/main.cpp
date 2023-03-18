@@ -22,6 +22,23 @@ CORE_PORT(B)
 CORE_PORT(C)
 CORE_PORT(D)
 
+//                        __.___.__ 
+//            * RX  - 0  |         | A5 C5 - MSB Latch Enable (active high)
+//            * TX  - 1  |         | A4 C4 - LSB Latch Enable (active high)
+// OutlputLatch PD2 - 2  |         | A3 C3 - Bus Read Enable (active low)
+// Z80 Clock    PD3 - 3  |         | A2 C2 - Bus Write Enable (active low)
+// Data 4       PD4 - 4  |         | A1 c1 - Z80 RESET
+// Data 5       PD5 - 5  | Adafruit| A0 C0 - Z80 INT
+// Data 6       PD6 - 6  | Metro   | Aref
+// Data 7       PD7 - 7  |   Mini  | Vin
+// Data 0       PB0 - 8  |         | Gnd
+// Data 1       PB1 - 9  |         | Gnd
+// Data 2       PB2 - 10 |         | 5V
+// Data 3       PB3 - 11 |   ___   | 3.3V
+//      *       PB4 - 12 |  |USB|  | Reset
+//      *       PB5 - 13 |__|___|__| USB 5V
+// * unused digital pins
+
 // Output Enable - D2 |         | x
 //     Z80 Clock - D3 |         | x
 //        Data 4 - D4 |         | C5 - MSB Latch Enable (active high)
