@@ -88,9 +88,9 @@ struct Z80Clock {
     RegWGM2::write(2); // select CTC mode
     RegCOM2B::write(1); // toggle OC2B on compare match
     RegOC2B::config_output(); // GPIO must be in output mode
-    RegOCR2A::write(0); // count that resets timer, the clock period
-    RegOCR2B::write(0); // count that toggles OC2B (must be <= OCR2A)
-    RegCS2::write(1); // 0 to stop, 1 for no prescaler, 2 for /8, etc
+    RegOCR2A::write(1); // count that resets timer, the clock period - 0 for half crystal speed, 1 shoult give 1/4 crystal speed
+    RegOCR2B::write(0); // count that toggles OC2B (must be <= OCR2A) - 0 for 8Mhz, 1 for 4Mhz
+    RegCS2::write(1); // 0 to stop, 1 for no prescaler, 2 for /8, etc 
   }
 
   static void start() { RegCS2::write(1); }
