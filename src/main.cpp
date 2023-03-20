@@ -25,18 +25,18 @@ CORE_PORT(D)
 //                        __.___.__ 
 //            * RX  - 0  |         | A5 C5 - MSB Latch Enable (active high)
 //            * TX  - 1  |         | A4 C4 - LSB Latch Enable (active high)
-// OutlputLatch PD2 - 2  |         | A3 C3 - Bus Read Enable (active low)
+// OutputLatch/ PD2 - 2  |         | A3 C3 - Bus Read Enable (active low)
 // Z80 Clock    PD3 - 3  |         | A2 C2 - Bus Write Enable (active low)
 // Data 4       PD4 - 4  |         | A1 c1 - Z80 RESET
-// Data 5       PD5 - 5  | Adafruit| A0 C0 - Z80 INT
+// Data 5       PD5 - 5  | Adafruit| A0 C0 - Z80 INT/
 // Data 6       PD6 - 6  | Metro   | Aref
 // Data 7       PD7 - 7  |   Mini  | Vin
 // Data 0       PB0 - 8  |         | Gnd
 // Data 1       PB1 - 9  |         | Gnd
 // Data 2       PB2 - 10 |         | 5V
 // Data 3       PB3 - 11 |   ___   | 3.3V
-//      *       PB4 - 12 |  |USB|  | Reset
-//      *       PB5 - 13 |__|___|__| USB 5V
+//      *       PB4 - 12 |  |USB|  | Reset for UNO
+// Halt/       PB5 - 13 |__|___|__| USB 5V
 // * unused digital pins
 
 // Output Enable - D2 |         | x
@@ -88,9 +88,19 @@ struct Z80Clock {
     RegWGM2::write(2); // select CTC mode
     RegCOM2B::write(1); // toggle OC2B on compare match
     RegOC2B::config_output(); // GPIO must be in output mode
-    RegOCR2A::write(1); // count that resets timer, the clock period - 0 for half crystal speed, 1 gives 1/4 crystal speed, onfirmed with oscilloscope 
-    RegOCR2B::write(0); // count that toggles OC2B (must be <= OCR2A) - 0 for 8Mhz, 1 for 4Mhz
-    RegCS2::write(1); // 0 to stop, 1 for no prescaler, 2 for /8, etc 
+    RegOCR2A::write(1); // count that resets timer, the clock period 
+    // 0 for half crystal speed, (16 / 2 = 8Mhz)
+    // 1 gives 1/4 crystal speed, confirmed with oscilloscope 4Mhz ( 16 / 2 / 2 = 4)
+    // 2 gives scope reading of 2.67Mhz (16 / (2+1) / 2 = 2.66667)
+    // 3 gives scope reading of 2.00Mhz (16 / (3+1) / 2 = 2.0)
+    // 4 gives scope reading of 1.6Mhz  (16 / (4+1) / 2 = 1.6)
+    // 5 gives scope reading of 1.33 Mhz (16 / (5+1) / 2 = 1.33333)
+    // 6 gives scope reading of 1.16 Mhz (16 / (6+1) / 2 = 1.143 )
+    // 7 gives scope reading of 1 Mhz   (16 / (7+1) / 2 = 1.0 )
+
+
+    RegOCR2B::write(0); // count that toggles OC2B (must be <= OCR2A) - with 0 the pin toggles on rollover or count reset
+    RegCS2::write(1); // 0 to stop, 1 for no pre-scaler, 2 for /8, 3 for /32, 4 for / 64, 5 for / 128, 6 for / 256, 7 for / 1024  
   }
 
   static void start() { RegCS2::write(1); }
@@ -147,6 +157,9 @@ void setup() {
   // Establish serial connection with computer
   Serial.begin(9600);
   while (!Serial) {}
+  
+  Bus::config_float();  //float the latches and data from Arduino side (read and write should be floated until needed)
+
 }
 
 void set_baud(Args args) {
@@ -187,4 +200,6 @@ void loop() {
   };
 
   serialCli.run_once(commands);
+  Bus::config_float();
+  
 }
