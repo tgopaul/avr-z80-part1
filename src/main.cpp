@@ -28,7 +28,7 @@ CORE_PORT(D)
 // OutputLatch/ PD2 - 2  |         | A3 C3 - Bus Read Enable (active low)
 // Z80 Clock    PD3 - 3  |         | A2 C2 - Bus Write Enable (active low)
 // Data 4       PD4 - 4  |         | A1 c1 - Z80 RESET
-// Data 5       PD5 - 5  | Adafruit| A0 C0 - Z80 INT/
+// Data 5       PD5 - 5  | Adafruit| A0 C0 - Z80 BUSREQ
 // Data 6       PD6 - 6  | Metro   | Aref
 // Data 7       PD7 - 7  |   Mini  | Vin
 // Data 0       PB0 - 8  |         | Gnd
@@ -36,9 +36,12 @@ CORE_PORT(D)
 // Data 2       PB2 - 10 |         | 5V
 // Data 3       PB3 - 11 |   ___   | 3.3V
 //      *       PB4 - 12 |  |USB|  | Reset for UNO
-// Halt/       PB5 - 13 |__|___|__| USB 5V
+// Halt/        PB5 - 13 |__|___|__| USB 5V
 // * unused digital pins
 
+//                        __.___.__ 
+//         * RX  - 0  |         | x 
+//         * TX  - 1  |         | x 
 // Output Enable - D2 |         | x
 //     Z80 Clock - D3 |         | x
 //        Data 4 - D4 |         | C5 - MSB Latch Enable (active high)
@@ -46,7 +49,7 @@ CORE_PORT(D)
 //        Data 6 - D6 | Arduino | C3 - Bus Read Enable (active low)
 //        Data 7 - D7 |   NANO  | C2 - Bus Write Enable (active low)
 //        Data 0 - B0 |         | C1 - Z80 RESET
-//        Data 1 - B1 |         | C0 - Z80 INT
+//        Data 1 - B1 |         | C0 - Z80 BUSREQ
 //        Data 2 - B2 |   ___   | x
 //        Data 3 - B3 |  |USB|  | x
 //             * - B4 |__|___|__| B5 - Z80 HALT
@@ -68,7 +71,7 @@ using ReadEnable = ActiveLow<PortC::Bit<3>>;
 using WriteEnable = ActiveLow<PortC::Bit<2>>;
 
 using Z80Reset = ActiveLow<PortC::Bit<1>>;
-using Z80Int = ActiveLow<PortC::Bit<0>>;
+using Z80BusReq = ActiveLow<PortC::Bit<0>>;
 using Z80Halt = ActiveLow<PortB::Bit<5>>;
 
 struct Z80Clock {
@@ -77,17 +80,22 @@ struct Z80Clock {
   CORE_REG(TCCR2B)
   CORE_REG(OCR2A)
   CORE_REG(OCR2B)
+  CORE_REG(TIFR2)
 
   // Aliases for Timer2 bitfields
   using RegCOM2B = RightAlign<RegTCCR2A::Mask<0x30>>;
   using RegCS2 = RegTCCR2B::Mask<0x07>;
   using RegWGM2 = BitExtend<RegTCCR2B::Bit<WGM22>, RegTCCR2A::Mask<0x03>>;
   using RegOC2B = PortD::Bit<3>;
+  using RegOCF2B = RegTIFR2::Bit<OCF2B>;
 
   static void config() {
-    RegWGM2::write(2); // select CTC mode
-    RegCOM2B::write(1); // toggle OC2B on compare match
+    RegWGM2::write(7); // select fast PWM mode w/ OCR2A top
+    RegCOM2B::write(3); // clear OC2B at OCR2A, set OC2B at OCR2B
     RegOC2B::config_output(); // GPIO must be in output mode
+    RegOCR2A::write(1); // count that resets timer, the clock period
+    RegOCR2B::write(0); // count that toggles OC2B (must be <= OCR2A)
+    RegCS2::write(1); // 0 to stop, 1 for no prescaler, 2 for /8, etc
     RegOCR2A::write(1); // count that resets timer, the clock period 
     // 0 for half crystal speed, (16 / 2 = 8Mhz)
     // 1 gives 1/4 crystal speed, confirmed with oscilloscope 4Mhz ( 16 / 2 / 2 = 4)
@@ -101,6 +109,16 @@ struct Z80Clock {
 
     RegOCR2B::write(0); // count that toggles OC2B (must be <= OCR2A) - with 0 the pin toggles on rollover or count reset
     RegCS2::write(1); // 0 to stop, 1 for no pre-scaler, 2 for /8, 3 for /32, 4 for / 64, 5 for / 128, 6 for / 256, 7 for / 1024  
+  }
+
+  // Wait for N positive clock edges
+  template <uint8_t N = 1>
+  static void wait_ticks() {
+    if (N > 0) {
+      RegOCF2B::set(); // clear compare flag
+      while (RegOCF2B::is_clear()) {} // wait for clock edge
+      wait_ticks<N - 1>();
+    }
   }
 
   static void start() { RegCS2::write(1); }
@@ -146,11 +164,12 @@ struct API : core::mon::Base<API> {
 };
 
 void setup() {
-  // Start with Z80 in RESET state
-  Z80Reset::config_output();
-  Z80Reset::enable();
+  // Start with Z80 in BUSREQ state to keep RS and WR floating
+  // Previously used the RESET state, but this drives RS and WR high instead
+  Z80BusReq::config_output();
+  Z80BusReq::enable();
 
-  Z80Int::config_output();
+  Z80Reset::config_output();
   Z80Halt::config_input();
   Z80Clock::config();
 
@@ -175,9 +194,14 @@ void set_baud(Args args) {
 
 void run_until_halt(Args args) {
   Bus::config_float();
-  Z80Reset::disable();
-  while (!Z80Halt::is_enabled()) {}
+  // Hold RESET low for 3 clock pulses
   Z80Reset::enable();
+  Z80Clock::wait_ticks<3>();
+  Z80Reset::disable();
+  // Release BUSREQ to let program run
+  Z80BusReq::disable();
+  while (!Z80Halt::is_enabled()) {}
+  Z80BusReq::enable();
 }
 
 void loop() {
